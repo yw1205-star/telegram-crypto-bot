@@ -12,7 +12,7 @@ app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'Bot running' });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Health check on port ${PORT}`);
 });
 
