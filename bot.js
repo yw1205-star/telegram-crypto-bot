@@ -3,6 +3,19 @@ const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 const path = require('path');
 
+// Add Express for health check
+const express = require('express');
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', message: 'Bot running' });
+});
+
+app.listen(PORT, () => {
+  console.log(`Health check on port ${PORT}`);
+});
+
 const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) {
   console.error('❌ TELEGRAM_BOT_TOKEN missing in .env');
