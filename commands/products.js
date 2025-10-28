@@ -1,160 +1,116 @@
-// commands/products.js - COMPLETE & WORKING
+// commands/products.js - COMPLETE & TESTED
 
 const { getProductsByCountry, getProductById } = require('../data/products');
-const { runAsync } = require('../config/database');
+const { db } = require('../config/database');
 
 module.exports = function(bot) {
   
-  // Listen for "Shop Products" button text
-  bot.onText(/Shop Products|🛍️|shop/i, async (msg) => {
-    const chatId = msg.chat.id;
+  // Ensure cart table exists
+  db.run(`
+    CREATE TABLE IF NOT EXISTS cart (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      product_id TEXT NOT NULL,
+      quantity TEXT NOT NULL,
+      price REAL NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
 
-    const keyboard = {
-      inline_keyboard: [
-        [{ text: '🇲🇾 Malaysia', callback_data: 'country_malaysia' }],
-        [{ text: '🇸🇬 Singapore', callback_data: 'country_singapore' }],
-        [{ text: '🇹🇭 Thailand', callback_data: 'country_thailand' }]
-      ]
-    };
-
-    await bot.sendMessage(
-      chatId,
-      `📍 Choose your country:`,
-      { reply_markup: keyboard }
-    );
+  // Listen for "Shop Products" text button
+  bot.onText(/Shop Products|shop/i, async (msg) => {
+    if (msg.text && !msg.text.startsWith('/')) {
+      showCountrySelection(bot, msg.chat.id);
+    }
   });
 
   // /products command
   bot.onText(/\/products/, async (msg) => {
-    const chatId = msg.chat.id;
+    showCountrySelection(bot, msg.chat.id);
+  });
 
+  // Show country selection
+  function showCountrySelection(bot, chatId) {
     const keyboard = {
       inline_keyboard: [
-        [{ text: '🇲🇾 Malaysia', callback_data: 'country_malaysia' }],
-        [{ text: '🇸🇬 Singapore', callback_data: 'country_singapore' }],
-        [{ text: '🇹🇭 Thailand', callback_data: 'country_thailand' }]
+        [{ text: '🇲🇾 Malaysia', callback_data: 'pcountry_malaysia' }],
+        [{ text: '🇸🇬 Singapore', callback_data: 'pcountry_singapore' }],
+        [{ text: '🇹🇭 Thailand', callback_data: 'pcountry_thailand' }]
       ]
     };
 
-    await bot.sendMessage(
-      chatId,
-      `📍 Choose your country:`,
-      { reply_markup: keyboard }
-    );
-  });
+    bot.sendMessage(chatId, '📍 Choose your country:', { reply_markup: keyboard });
+  }
 
-  // Handle all product-related callbacks
+  // Handle product callbacks
   bot.on('callback_query', async (query) => {
+    const data = query.data;
+    
+    // Only handle product-related callbacks (prefixed with 'p')
+    if (!data.startsWith('p')) return;
+
     const chatId = query.message.chat.id;
     const messageId = query.message.message_id;
-    const data = query.data;
 
     try {
       // Country selection
-      if (data.startsWith('country_')) {
-        const country = data.replace('country_', '');
+      if (data.startsWith('pcountry_')) {
+        const country = data.replace('pcountry_', '');
         const products = getProductsByCountry(country);
 
-        if (products.length === 0) {
-          await bot.answerCallbackQuery(query.id, { 
-            text: 'No products available' 
-          });
-          return;
-        }
+        const productButtons = products.map(product => [{
+          text: `${product.image} ${product.name}`,
+          callback_data: `pproduct_${product.id}`
+        }]);
 
-        const productButtons = products.map(product => [
-          {
-            text: `${product.image} ${product.name}`,
-            callback_data: `product_${product.id}`
-          }
-        ]);
-
-        productButtons.push([
-          { text: '« Back', callback_data: 'back_to_countries' }
-        ]);
-
-        const keyboard = { inline_keyboard: productButtons };
+        productButtons.push([{ text: '« Back', callback_data: 'pback_countries' }]);
 
         await bot.editMessageText(
-          `📍 *${country.charAt(0).toUpperCase() + country.slice(1)}*\n\n` +
-          `Select a product:`,
+          `📍 *${country.charAt(0).toUpperCase() + country.slice(1)}*\n\nSelect a product:`,
           {
             chat_id: chatId,
             message_id: messageId,
             parse_mode: 'Markdown',
-            reply_markup: keyboard
+            reply_markup: { inline_keyboard: productButtons }
           }
         );
-
         await bot.answerCallbackQuery(query.id);
         return;
       }
 
       // Product selection
-      if (data.startsWith('product_')) {
-        const productId = data.replace('product_', '');
+      if (data.startsWith('pproduct_')) {
+        const productId = data.replace('pproduct_', '');
         const product = getProductById(productId);
 
         if (!product) {
-          await bot.answerCallbackQuery(query.id, { text: 'Product not found' });
+          await bot.answerCallbackQuery(query.id, { text: 'Product not found', show_alert: true });
           return;
         }
 
-        const quantityButtons = Object.keys(product.price).map(quantity => [
-          {
-            text: `${quantity} - ${product.currency} ${product.price[quantity]}`,
-            callback_data: `addcart_${productId}_${quantity}`
-          }
-        ]);
+        const quantityButtons = Object.keys(product.price).map(qty => [{
+          text: `${qty} - ${product.currency} ${product.price[qty]}`,
+          callback_data: `padd_${productId}_${qty}`
+        }]);
 
-        quantityButtons.push([
-          { text: '« Back', callback_data: `country_${productId.split('_')[0]}` }
-        ]);
-
-        const keyboard = { inline_keyboard: quantityButtons };
+        quantityButtons.push([{ text: '« Back', callback_data: `pcountry_${productId.split('_')[0]}` }]);
 
         await bot.editMessageText(
-          `${product.image} *${product.name}*\n\n` +
-          `${product.description}\n\n` +
-          `Select quantity:`,
+          `${product.image} *${product.name}*\n\n${product.description}\n\nSelect quantity:`,
           {
             chat_id: chatId,
             message_id: messageId,
             parse_mode: 'Markdown',
-            reply_markup: keyboard
+            reply_markup: { inline_keyboard: quantityButtons }
           }
         );
-
         await bot.answerCallbackQuery(query.id);
         return;
       }
 
-      // Back to countries
-      if (data === 'back_to_countries') {
-        const keyboard = {
-          inline_keyboard: [
-            [{ text: '🇲🇾 Malaysia', callback_data: 'country_malaysia' }],
-            [{ text: '🇸🇬 Singapore', callback_data: 'country_singapore' }],
-            [{ text: '🇹🇭 Thailand', callback_data: 'country_thailand' }]
-          ]
-        };
-
-        await bot.editMessageText(
-          `📍 Choose your country:`,
-          {
-            chat_id: chatId,
-            message_id: messageId,
-            reply_markup: keyboard
-          }
-        );
-
-        await bot.answerCallbackQuery(query.id);
-        return;
-      }
-
-      // Add to cart - FIXED VERSION
-      if (data.startsWith('addcart_')) {
-        const parts = data.replace('addcart_', '');
+      // Add to cart
+      if (data.startsWith('padd_')) {
+        const parts = data.replace('padd_', '');
         const lastUnderscore = parts.lastIndexOf('_');
         const productId = parts.substring(0, lastUnderscore);
         const quantity = parts.substring(lastUnderscore + 1);
@@ -162,39 +118,43 @@ module.exports = function(bot) {
         const product = getProductById(productId);
 
         if (!product) {
-          await bot.answerCallbackQuery(query.id, { text: 'Product not found' });
+          await bot.answerCallbackQuery(query.id, { text: 'Product not found', show_alert: true });
           return;
         }
 
-        // Add to cart in database
-        await runAsync(
-          `INSERT INTO cart (user_id, product_id, quantity, price) 
-           VALUES (?, ?, ?, ?)`,
-          [chatId, productId, quantity, product.price[quantity]]
-        );
+        // Insert into cart
+        db.run(
+          `INSERT INTO cart (user_id, product_id, quantity, price) VALUES (?, ?, ?, ?)`,
+          [chatId, productId, quantity, product.price[quantity]],
+          (err) => {
+            if (err) {
+              console.error('Cart insert error:', err);
+              bot.answerCallbackQuery(query.id, { text: 'Error adding to cart', show_alert: true });
+              return;
+            }
 
-        await bot.answerCallbackQuery(query.id, { 
-          text: `✅ Added ${quantity} ${product.name}!`,
-          show_alert: false
-        });
-
-        await bot.sendMessage(
-          chatId,
-          `✅ *Added to cart:*\n\n` +
-          `${product.image} ${product.name}\n` +
-          `📏 Quantity: ${quantity}\n` +
-          `💰 Price: ${product.currency} ${product.price[quantity]}\n\n` +
-          `Tap "View Cart" button to checkout!`,
-          { parse_mode: 'Markdown' }
+            bot.answerCallbackQuery(query.id, { text: `✅ Added ${quantity} ${product.name}!` });
+            
+            bot.sendMessage(
+              chatId,
+              `✅ *Added to cart:*\n\n${product.image} ${product.name}\n📏 ${quantity}\n💰 ${product.currency} ${product.price[quantity]}\n\nTap "View Cart" to checkout!`,
+              { parse_mode: 'Markdown' }
+            );
+          }
         );
         return;
       }
 
+      // Back to countries
+      if (data === 'pback_countries') {
+        showCountrySelection(bot, chatId);
+        await bot.answerCallbackQuery(query.id);
+        return;
+      }
+
     } catch (error) {
-      console.error('Error in products callback:', error);
-      await bot.answerCallbackQuery(query.id, { 
-        text: 'An error occurred. Please try again.' 
-      });
+      console.error('Product callback error:', error);
+      await bot.answerCallbackQuery(query.id, { text: 'An error occurred', show_alert: true });
     }
   });
 };
