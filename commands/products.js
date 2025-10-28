@@ -1,205 +1,118 @@
-// =======================================================
-// 📄 File: commands/products.js (FINAL FIX - Clean)
-// Purpose: Country → product list → detail → qty → add / buy / bundle
-// Folder: commands/
-// =======================================================
+// commands/products.js
 
-const { db, getAsync } = require("../config/database");
-const { t, matchesButton } = require("../utils/i18n");
-const { productsByLocation, productUpdate } = require("../data/products");
-const { bundlePrices } = require("../data/products");
+const { countries, getProductsByCountry } = require('../data/products');
+const { translate } = require('../utils/i18n');
 
-function qtyKeyboard(lang, loc, name, qty) {
-  const encL = encodeURIComponent(loc);
-  const encN = encodeURIComponent(name);
-  const q = Math.max(1, parseInt(qty, 10) || 1);
-  return {
+async function productsCommand(bot, msg) {
+  const chatId = msg.chat.id;
+  const lang = msg.from.language_code || 'en';
+
+  // Show country selection
+  const keyboard = {
     inline_keyboard: [
-      [
-        { text: "➖", callback_data: `qty_dec|${encL}|${encN}|${q}` },
-        { text: `${q}`, callback_data: `qty_nop|${encL}|${encN}|${q}` },
-        { text: "➕", callback_data: `qty_inc|${encL}|${encN}|${q}` },
-      ],
-      [
-        { text: "🛒 Add to Cart", callback_data: `add|${encL}|${encN}|${q}` },
-        { text: "💳 Checkout Now", callback_data: `buy|${encL}|${encN}|${q}` },
-      ],
-      [{ text: "📦 Bundle Purchase", callback_data: `bundle|${encN}` }],
-      [{ text: t(lang, "back"), callback_data: "shop|back" }],
-    ],
+      [{ text: '🇲🇾 Malaysia', callback_data: 'country_malaysia' }],
+      [{ text: '🇸🇬 Singapore', callback_data: 'country_singapore' }],
+      [{ text: '🇹🇭 Thailand', callback_data: 'country_thailand' }]
+    ]
   };
+
+  await bot.sendMessage(
+    chatId,
+    `${translate('choose_country', lang) || 'Choose your country:'}`,
+    { reply_markup: keyboard }
+  );
 }
 
-function safeEdit(bot, msg, text, markup) {
-  bot.editMessageText(text, {
-    chat_id: msg.chat.id,
-    message_id: msg.message_id,
-    parse_mode: "Markdown",
-    reply_markup: markup,
-  }).catch((e) => {
-    const d = e?.response?.body?.description;
-    if (!String(d).includes("message is not modified")) console.error(d);
-  });
-}
+// Handle country selection
+async function handleCountrySelection(bot, query) {
+  const chatId = query.message.chat.id;
+  const messageId = query.message.message_id;
+  const lang = query.from.language_code || 'en';
+  
+  const country = query.data.replace('country_', '');
+  const products = getProductsByCountry(country);
 
-module.exports = (bot) => {
-  const openCountries = async (chatId) => {
-    const u = await getAsync("SELECT lang FROM users WHERE user_id = ?", [chatId]);
-    const lang = u?.lang || "en";
-    const last = productUpdate?.date
-      ? `\n🗓️ ${productUpdate.date} ⏰ ${productUpdate.time}`
-      : "";
-    const locations = Object.keys(productsByLocation);
-    bot.sendMessage(chatId, `${t(lang, "shop")}\n📍 *Choose your country:*${last}`, {
-      parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: locations.map((c) => [
-          { text: c, callback_data: `loc|${encodeURIComponent(c)}` },
-        ]),
-      },
+  if (products.length === 0) {
+    await bot.answerCallbackQuery(query.id, { 
+      text: 'No products available for this country' 
     });
-  };
+    return;
+  }
 
-  // Handle /shop command
-  bot.onText(/^\/shop$/, (msg) => openCountries(msg.chat.id));
-
-  // Handle shop button clicks from keyboard (any language)
-  bot.on("message", async (msg) => {
-    if (!msg.text || msg.text.startsWith('/')) return;
-    
-    // Only handle if it's a shop button in any language
-    if (matchesButton(msg.text.trim(), "shop")) {
-      openCountries(msg.chat.id);
+  // Create product list
+  const productButtons = products.map(product => [
+    {
+      text: `${product.name} - ${product.currency} ${product.price['1g']}`,
+      callback_data: `product_${product.id}`
     }
-  });
+  ]);
 
-  bot.on("callback_query", async (q) => {
-    const chatId = q.message?.chat?.id;
-    const data = q.data;
-    if (!chatId || !data) return;
-    const u = await getAsync("SELECT lang FROM users WHERE user_id = ?", [chatId]);
-    const lang = u?.lang || "en";
+  productButtons.push([
+    { text: translate('back', lang) || '« Back', callback_data: 'products' }
+  ]);
 
-    // Back to country selection
-    if (data === "shop|back") return openCountries(chatId);
+  const keyboard = { inline_keyboard: productButtons };
 
-    // Country → product list
-    if (data.startsWith("loc|")) {
-      const loc = decodeURIComponent(data.split("|")[1]);
-      const list = productsByLocation[loc] || [];
-      if (!list.length) return bot.sendMessage(chatId, "❌ No products found.");
-      const last = productUpdate?.date
-        ? `\n🗓️ ${productUpdate.date} ⏰ ${productUpdate.time}`
-        : "";
-      const buttons = list.map((p) => [
-        {
-          text: `${p.name} - $${p.price.toFixed(2)}`,
-          callback_data: `prod|${encodeURIComponent(loc)}|${encodeURIComponent(p.name)}`,
-        },
-      ]);
-      return bot.sendMessage(chatId, `📦 *Products in ${loc}:*${last}`, {
-        parse_mode: "Markdown",
-        reply_markup: { inline_keyboard: buttons },
-      });
+  await bot.editMessageText(
+    `📍 *${country.charAt(0).toUpperCase() + country.slice(1)}*\n\n` +
+    `${translate('available_products', lang) || 'Available products:'}`,
+    {
+      chat_id: chatId,
+      message_id: messageId,
+      parse_mode: 'Markdown',
+      reply_markup: keyboard
     }
+  );
 
-    // Product detail
-    if (data.startsWith("prod|")) {
-      const [, l, n] = data.split("|");
-      const loc = decodeURIComponent(l);
-      const name = decodeURIComponent(n);
-      const p = (productsByLocation[loc] || []).find((x) => x.name === name);
-      if (!p) return bot.sendMessage(chatId, "❌ Not found.");
-      const text = `🛒 *${p.name}*\n💵 $${p.price.toFixed(2)}\n\n${p.desc}\n\nSelect quantity:`;
-      return bot.sendMessage(chatId, text, {
-        parse_mode: "Markdown",
-        reply_markup: qtyKeyboard(lang, loc, name, 1),
-      });
-    }
+  await bot.answerCallbackQuery(query.id);
+}
 
-    // Quantity changes
-    if (data.startsWith("qty_")) {
-      const [verb, locEnc, nameEnc, qtyStr] = data.split("|");
-      const loc = decodeURIComponent(locEnc);
-      const name = decodeURIComponent(nameEnc);
-      const list = productsByLocation[loc] || [];
-      const p = list.find((x) => x.name === name);
-      if (!p) return;
-      let qty = Math.max(1, parseInt(qtyStr, 10) || 1);
-      if (verb === "qty_inc") qty++;
-      else if (verb === "qty_dec") qty = Math.max(1, qty - 1);
-      const text = `🛒 *${p.name}*\n💵 $${p.price.toFixed(
-        2
-      )}\n\n${p.desc}\n\nSelect quantity:`;
-      return safeEdit(bot, q.message, text, qtyKeyboard(lang, loc, name, qty));
-    }
+// Handle product selection
+async function handleProductSelection(bot, query) {
+  const chatId = query.message.chat.id;
+  const messageId = query.message.message_id;
+  const lang = query.from.language_code || 'en';
+  
+  const productId = query.data.replace('product_', '');
+  const { getProductById } = require('../data/products');
+  const product = getProductById(productId);
 
-    // Add to cart
-    if (data.startsWith("add|")) {
-      const [, locEnc, nameEnc, qStr] = data.split("|");
-      const name = decodeURIComponent(nameEnc);
-      const qty = Math.max(1, parseInt(qStr, 10) || 1);
-      const loc = decodeURIComponent(locEnc);
-      const p = (productsByLocation[loc] || []).find((x) => x.name === name);
-      if (!p) return bot.sendMessage(chatId, "⚠️ Product not found.");
-      db.run(
-        `INSERT INTO cart (user_id, product_name, price, quantity)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(user_id, product_name)
-         DO UPDATE SET quantity = quantity + excluded.quantity`,
-        [String(chatId), name, p.price, qty],
-        (err) => {
-          if (err) {
-            console.error(err);
-            return bot.sendMessage(chatId, "⚠️ DB error.");
-          }
-          bot.sendMessage(
-            chatId,
-            `✅ Added *${qty}× ${name}* to cart.`,
-            {
-              parse_mode: "Markdown",
-              reply_markup: {
-                inline_keyboard: [[{ text: "🛒 View Cart", callback_data: "cart|view" }]],
-              },
-            }
-          );
-        }
-      );
-      return;
-    }
+  if (!product) {
+    await bot.answerCallbackQuery(query.id, { text: 'Product not found' });
+    return;
+  }
 
-    // Quick buy = add then checkout
-    if (data.startsWith("buy|")) {
-      const [, locEnc, nameEnc, qStr] = data.split("|");
-      const name = decodeURIComponent(nameEnc);
-      const qty = Math.max(1, parseInt(qStr, 10) || 1);
-      const loc = decodeURIComponent(locEnc);
-      const p = (productsByLocation[loc] || []).find((x) => x.name === name);
-      if (!p) return bot.sendMessage(chatId, "⚠️ Product not found.");
-      db.run(
-        `INSERT INTO cart (user_id, product_name, price, quantity)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(user_id, product_name)
-         DO UPDATE SET quantity = quantity + excluded.quantity`,
-        [String(chatId), name, p.price, qty],
-        (err) => {
-          if (err) {
-            console.error(err);
-            return bot.sendMessage(chatId, "⚠️ DB error.");
-          }
-          bot.sendMessage(
-            chatId,
-            `🧾 Ready to checkout *${name} × ${qty}*.`,
-            {
-              parse_mode: "Markdown",
-              reply_markup: {
-                inline_keyboard: [[{ text: "🛒 View Cart", callback_data: "cart|view" }]],
-              },
-            }
-          );
-        }
-      );
-      return;
+  // Show product details with quantity options
+  const quantityButtons = Object.keys(product.price).map(quantity => [
+    {
+      text: `${quantity} - ${product.currency} ${product.price[quantity]}`,
+      callback_data: `addcart_${productId}_${quantity}`
     }
-  });
+  ]);
+
+  quantityButtons.push([
+    { text: translate('back', lang) || '« Back', callback_data: `country_${productId.split('_')[0]}` }
+  ]);
+
+  const keyboard = { inline_keyboard: quantityButtons };
+
+  await bot.editMessageText(
+    `📦 *${product.name}*\n\n` +
+    `${product.description}\n\n` +
+    `${translate('select_quantity', lang) || 'Select quantity:'}`,
+    {
+      chat_id: chatId,
+      message_id: messageId,
+      parse_mode: 'Markdown',
+      reply_markup: keyboard
+    }
+  );
+
+  await bot.answerCallbackQuery(query.id);
+}
+
+module.exports = {
+  productsCommand,
+  handleCountrySelection,
+  handleProductSelection
 };
