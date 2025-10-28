@@ -1,70 +1,171 @@
-// =======================================================
-// 📄 File: data/products.js
-// Purpose: Catalog of Asian countries + bundle price mapping
-// Folder: data/
-// =======================================================
+// data/products.js
+
+const products = {
+  malaysia: [
+    {
+      id: 'my_platinum_kush',
+      name: 'Platinum Kush',
+      category: 'Premium Strain',
+      price: {
+        '1g': 120,
+        '3g': 350,
+        '7g': 630,
+        '14g': 1100,
+        '28g': 1400
+      },
+      currency: 'MYR',
+      description: 'Premium quality Platinum Kush',
+      inStock: true
+    },
+    {
+      id: 'my_sour_diesel',
+      name: 'Sour Diesel',
+      category: 'Premium Strain',
+      price: {
+        '1g': 120,
+        '3g': 350,
+        '7g': 630,
+        '14g': 1100,
+        '28g': 1400
+      },
+      currency: 'MYR',
+      description: 'Premium quality Sour Diesel',
+      inStock: true
+    },
+    {
+      id: 'my_vice_city',
+      name: 'Vice City',
+      category: 'Premium Strain',
+      price: {
+        '1g': 120,
+        '3g': 350,
+        '7g': 630,
+        '14g': 1100,
+        '28g': 1400
+      },
+      currency: 'MYR',
+      description: 'Premium quality Vice City',
+      inStock: true
+    }
+  ],
+
+  singapore: [
+    {
+      id: 'sg_platinum_kush',
+      name: 'Platinum Kush',
+      category: 'Premium Strain',
+      price: {
+        '1g': 144,   // 120 * 1.2 = 144
+        '3g': 420,   // 350 * 1.2 = 420
+        '7g': 756,   // 630 * 1.2 = 756
+        '14g': 1320, // 1100 * 1.2 = 1320
+        '28g': 1680  // 1400 * 1.2 = 1680
+      },
+      currency: 'SGD',
+      description: 'Premium quality Platinum Kush',
+      inStock: true
+    },
+    {
+      id: 'sg_sour_diesel',
+      name: 'Sour Diesel',
+      category: 'Premium Strain',
+      price: {
+        '1g': 144,
+        '3g': 420,
+        '7g': 756,
+        '14g': 1320,
+        '28g': 1680
+      },
+      currency: 'SGD',
+      description: 'Premium quality Sour Diesel',
+      inStock: true
+    },
+    {
+      id: 'sg_vice_city',
+      name: 'Vice City',
+      category: 'Premium Strain',
+      price: {
+        '1g': 144,
+        '3g': 420,
+        '7g': 756,
+        '14g': 1320,
+        '28g': 1680
+      },
+      currency: 'SGD',
+      description: 'Premium quality Vice City',
+      inStock: true
+    }
+  ],
+
+  thailand: [
+    {
+      id: 'th_platinum_kush',
+      name: 'Platinum Kush',
+      category: 'Premium Strain',
+      price: {
+        '1g': 108,   // 120 * 0.9 = 108
+        '3g': 315,   // 350 * 0.9 = 315
+        '7g': 567,   // 630 * 0.9 = 567
+        '14g': 990,  // 1100 * 0.9 = 990
+        '28g': 1260  // 1400 * 0.9 = 1260
+      },
+      currency: 'THB',
+      description: 'Premium quality Platinum Kush',
+      inStock: true
+    },
+    {
+      id: 'th_sour_diesel',
+      name: 'Sour Diesel',
+      category: 'Premium Strain',
+      price: {
+        '1g': 108,
+        '3g': 315,
+        '7g': 567,
+        '14g': 990,
+        '28g': 1260
+      },
+      currency: 'THB',
+      description: 'Premium quality Sour Diesel',
+      inStock: true
+    },
+    {
+      id: 'th_vice_city',
+      name: 'Vice City',
+      category: 'Premium Strain',
+      price: {
+        '1g': 108,
+        '3g': 315,
+        '7g': 567,
+        '14g': 990,
+        '28g': 1260
+      },
+      currency: 'THB',
+      description: 'Premium quality Vice City',
+      inStock: true
+    }
+  ]
+};
+
+// Available countries
+const countries = ['malaysia', 'singapore', 'thailand'];
+
+// Get products by country
+function getProductsByCountry(country) {
+  return products[country.toLowerCase()] || [];
+}
+
+// Get product by ID
+function getProductById(productId) {
+  for (const country in products) {
+    const product = products[country].find(p => p.id === productId);
+    if (product) return product;
+  }
+  return null;
+}
 
 module.exports = {
-  productUpdate: {
-    date: "2025-10-13",
-    time: "16:45",
-  },
-
-  // 🌏 Product lists by country
-  productsByLocation: {
-    Malaysia: [
-      { name: "Turbo LED Headlamp", price: 89.99, sku: "MY-LED1", desc: "Durable LED headlamp with high lumen output." },
-      { name: "Car Speaker BassPro", price: 120.0, sku: "MY-SP1", desc: "Deep bass car speaker for rich sound." },
-    ],
-    Singapore: [
-      { name: "SG Smart Headlamp", price: 95.0, sku: "SG-LED1", desc: "Stable beam LED headlamp for urban drivers." },
-      { name: "Audio Blaster X", price: 135.5, sku: "SG-AU1", desc: "Premium audio system for smooth listening." },
-    ],
-    Thailand: [
-      { name: "TH Power Beam", price: 88.5, sku: "TH-LED1", desc: "Energy-efficient LED headlamp." },
-      { name: "BassMax Speaker", price: 110.0, sku: "TH-SP1", desc: "Enhanced bass clarity speaker system." },
-    ],
-    Philippines: [
-      { name: "PH NightVision LED", price: 82.5, sku: "PH-LED1", desc: "Bright LED for night driving safety." },
-      { name: "SoundWave Pro", price: 118.75, sku: "PH-SP1", desc: "Powerful car speaker system." },
-    ],
-    Cambodia: [
-      { name: "CB DriveBright LED", price: 77.99, sku: "CB-LED1", desc: "Reliable and long-lasting LED light." },
-      { name: "BeatBoost Speaker", price: 112.0, sku: "CB-SP1", desc: "Compact speaker with high power output." },
-    ],
-    Vietnam: [
-      { name: "VN Lumina Beam", price: 84.25, sku: "VN-LED1", desc: "Perfect illumination for every road." },
-      { name: "SonicPulse Audio", price: 119.0, sku: "VN-SP1", desc: "Balanced sound for every car type." },
-    ],
-    Indonesia: [
-      { name: "ID HyperLED", price: 86.75, sku: "ID-LED1", desc: "Efficient headlamp with long lifespan." },
-      { name: "RhythmX Speaker", price: 115.25, sku: "ID-SP1", desc: "Speaker with strong bass resonance." },
-    ],
-  },
-
-  // 📦 Bundle pricing by product name
-  bundlePrices: {
-    "Turbo LED Headlamp": {
-      1: 89.99,
-      3: 259.97,
-      7: 599.93,
-      11: 959.89,
-    },
-    "Car Speaker BassPro": {
-      1: 120.0,
-      3: 339.99,
-      7: 779.99,
-      11: 1219.99,
-    },
-    "SG Smart Headlamp": {
-      1: 95.0,
-      3: 279.0,
-      7: 665.0,
-    },
-    "Audio Blaster X": {
-      1: 135.5,
-      3: 399.0,
-      7: 899.0,
-    },
-  },
+  products,
+  countries,
+  getProductsByCountry,
+  getProductById
 };

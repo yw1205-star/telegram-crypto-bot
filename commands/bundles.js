@@ -1,69 +1,102 @@
-// =======================================================
-// 📄 File: commands/bundles.js
-// Purpose: Bundle purchase with real discounted add-to-cart
-// Folder: commands/
-// =======================================================
+// commands/bundles.js
 
-const { db } = require("../config/database");
-const { bundlePrices } = require("../data/products");
+const { getProductsByCountry } = require('../data/products');
+const { translate } = require('../utils/i18n');
 
-module.exports = (bot) => {
-  bot.on("callback_query", (q) => {
-    if (!q.data || !q.data.startsWith("bundle|")) return;
-    const chatId = q.message?.chat?.id;
-    if (!chatId) return;
-    const name = decodeURIComponent(q.data.split("|")[1]);
-    const bundles = bundlePrices[name];
-    if (!bundles) return bot.sendMessage(chatId, "❌ No bundle available.");
+async function bundlesCommand(bot, msg) {
+  const chatId = msg.chat.id;
+  const lang = msg.from.language_code || 'en';
 
-    const text = `📦 *Bundle Options for ${name}:*\nSelect one below for discounted price.`;
-    const buttons = Object.keys(bundles).map((qty) => [
+  // Get user's selected country from database (you'll need to implement this)
+  // For now, defaulting to Malaysia
+  const userCountry = 'malaysia'; // TODO: Get from database
+
+  const products = getProductsByCountry(userCountry);
+
+  if (products.length === 0) {
+    await bot.sendMessage(chatId, translate('no_products', lang));
+    return;
+  }
+
+  // Create bundle options keyboard
+  const keyboard = {
+    inline_keyboard: products.map(product => [
       {
-        text: `${qty}x - $${bundles[qty].toFixed(2)}`,
-        callback_data: `bundlebuy|${encodeURIComponent(name)}|${qty}`,
-      },
-    ]);
-    bot.sendMessage(chatId, text, {
-      parse_mode: "Markdown",
-      reply_markup: { inline_keyboard: buttons },
-    });
-  });
-
-  // handle actual bundle buy
-  bot.on("callback_query", (q) => {
-    if (!q.data || !q.data.startsWith("bundlebuy|")) return;
-    const chatId = q.message?.chat?.id;
-    const parts = q.data.split("|");
-    const name = decodeURIComponent(parts[1]);
-    const qty = parseInt(parts[2], 10);
-    const bundles = bundlePrices[name];
-    const price = bundles?.[qty];
-    if (!price) return bot.sendMessage(chatId, "⚠️ Invalid bundle.");
-
-    db.run(
-      `INSERT INTO cart (user_id, product_name, price, quantity)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(user_id, product_name)
-       DO UPDATE SET quantity = quantity + excluded.quantity`,
-      [String(chatId), `${name} (Bundle ${qty}x)`, price / qty, qty],
-      (err) => {
-        if (err) {
-          console.error("Bundle add error:", err);
-          return bot.sendMessage(chatId, "⚠️ DB error adding bundle.");
-        }
-        bot.sendMessage(
-          chatId,
-          `✅ Bundle added: *${qty}× ${name}* at discounted price $${price.toFixed(
-            2
-          )}.`,
-          {
-            parse_mode: "Markdown",
-            reply_markup: {
-              inline_keyboard: [[{ text: "🛒 View Cart", callback_data: "cart|view" }]],
-            },
-          }
-        );
+        text: `${product.name}`,
+        callback_data: `bundle_${product.id}`
       }
-    );
+    ])
+  };
+
+  await bot.sendMessage(
+    chatId,
+    translate('select_product_bundle', lang),
+    { reply_markup: keyboard }
+  );
+}
+
+// Handle bundle selection
+async function handleBundleSelection(bot, query) {
+  const chatId = query.message.chat.id;
+  const messageId = query.message.message_id;
+  const lang = query.from.language_code || 'en';
+  
+  const productId = query.data.replace('bundle_', '');
+  const { getProductById } = require('../data/products');
+  const product = getProductById(productId);
+
+  if (!product) {
+    await bot.answerCallbackQuery(query.id, { text: 'Product not found' });
+    return;
+  }
+
+  // Create bundle quantity options
+  const bundleOptions = Object.keys(product.price).map(quantity => {
+    const price = product.price[quantity];
+    const discount = calculateDiscount(quantity, price);
+    
+    return [
+      {
+        text: `${quantity} - ${product.currency} ${price}${discount ? ` (Save ${discount}%)` : ''}`,
+        callback_data: `buy_${productId}_${quantity}`
+      }
+    ];
   });
+
+  bundleOptions.push([
+    { text: translate('back', lang), callback_data: 'bundles' }
+  ]);
+
+  const keyboard = { inline_keyboard: bundleOptions };
+
+  await bot.editMessageText(
+    `${translate('bundle_options', lang)}\n\n` +
+    `📦 *${product.name}*\n` +
+    `${product.description}\n\n` +
+    `${translate('select_quantity', lang)}:`,
+    {
+      chat_id: chatId,
+      message_id: messageId,
+      parse_mode: 'Markdown',
+      reply_markup: keyboard
+    }
+  );
+
+  await bot.answerCallbackQuery(query.id);
+}
+
+// Calculate discount percentage
+function calculateDiscount(quantity, price) {
+  // Base price per gram (1g price)
+  const basePrice = 120; // Malaysia base
+  const quantityNum = parseInt(quantity.replace('g', ''));
+  const expectedPrice = basePrice * quantityNum;
+  const discount = Math.round(((expectedPrice - price) / expectedPrice) * 100);
+  
+  return discount > 0 ? discount : 0;
+}
+
+module.exports = {
+  bundlesCommand,
+  handleBundleSelection
 };
