@@ -5,12 +5,29 @@ const { translate } = require('../utils/i18n');
 
 module.exports = function(bot) {
   
+  // Listen for "Shop Products" button text (NEW!)
+  bot.onText(/Shop Products|🛍️|shop/i, async (msg) => {
+    const chatId = msg.chat.id;
+
+    const keyboard = {
+      inline_keyboard: [
+        [{ text: '🇲🇾 Malaysia', callback_data: 'country_malaysia' }],
+        [{ text: '🇸🇬 Singapore', callback_data: 'country_singapore' }],
+        [{ text: '🇹🇭 Thailand', callback_data: 'country_thailand' }]
+      ]
+    };
+
+    await bot.sendMessage(
+      chatId,
+      `📍 Choose your country:`,
+      { reply_markup: keyboard }
+    );
+  });
+
   // /products command
   bot.onText(/\/products/, async (msg) => {
     const chatId = msg.chat.id;
-    const lang = msg.from.language_code || 'en';
 
-    // Show country selection
     const keyboard = {
       inline_keyboard: [
         [{ text: '🇲🇾 Malaysia', callback_data: 'country_malaysia' }],
