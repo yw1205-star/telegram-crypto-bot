@@ -1,4 +1,4 @@
-// commands/products.js - COMPLETE & TESTED
+// commands/products.js - NO callback_query listener
 
 const { getProductsByCountry, getProductById } = require('../data/products');
 const { db } = require('../config/database');
@@ -11,6 +11,7 @@ module.exports = function(bot) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
       product_id TEXT NOT NULL,
+      product_name TEXT NOT NULL,
       quantity TEXT NOT NULL,
       price REAL NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -42,13 +43,9 @@ module.exports = function(bot) {
     bot.sendMessage(chatId, '📍 Choose your country:', { reply_markup: keyboard });
   }
 
-  // Handle product callbacks
-  bot.on('callback_query', async (query) => {
+  // Export handler for callback routing
+  bot._handleProductCallback = async function(query) {
     const data = query.data;
-    
-    // Only handle product-related callbacks (prefixed with 'p')
-    if (!data.startsWith('p')) return;
-
     const chatId = query.message.chat.id;
     const messageId = query.message.message_id;
 
@@ -75,7 +72,7 @@ module.exports = function(bot) {
           }
         );
         await bot.answerCallbackQuery(query.id);
-        return;
+        return true;
       }
 
       // Product selection
@@ -85,7 +82,7 @@ module.exports = function(bot) {
 
         if (!product) {
           await bot.answerCallbackQuery(query.id, { text: 'Product not found', show_alert: true });
-          return;
+          return true;
         }
 
         const quantityButtons = Object.keys(product.price).map(qty => [{
@@ -105,7 +102,7 @@ module.exports = function(bot) {
           }
         );
         await bot.answerCallbackQuery(query.id);
-        return;
+        return true;
       }
 
       // Add to cart
@@ -119,13 +116,13 @@ module.exports = function(bot) {
 
         if (!product) {
           await bot.answerCallbackQuery(query.id, { text: 'Product not found', show_alert: true });
-          return;
+          return true;
         }
 
-        // Insert into cart
+        // Insert into cart with product_name
         db.run(
-          `INSERT INTO cart (user_id, product_id, quantity, price) VALUES (?, ?, ?, ?)`,
-          [chatId, productId, quantity, product.price[quantity]],
+          `INSERT INTO cart (user_id, product_id, product_name, quantity, price) VALUES (?, ?, ?, ?, ?)`,
+          [chatId, productId, product.name, quantity, product.price[quantity]],
           (err) => {
             if (err) {
               console.error('Cart insert error:', err);
@@ -142,19 +139,22 @@ module.exports = function(bot) {
             );
           }
         );
-        return;
+        return true;
       }
 
       // Back to countries
       if (data === 'pback_countries') {
         showCountrySelection(bot, chatId);
         await bot.answerCallbackQuery(query.id);
-        return;
+        return true;
       }
+
+      return false;
 
     } catch (error) {
       console.error('Product callback error:', error);
       await bot.answerCallbackQuery(query.id, { text: 'An error occurred', show_alert: true });
+      return true;
     }
-  });
+  };
 };

@@ -1,4 +1,4 @@
-// commands/cart.js - COMPLETE & TESTED
+// commands/cart.js - NO callback_query listener
 
 const { db } = require('../config/database');
 const { getProductById } = require('../data/products');
@@ -49,7 +49,7 @@ module.exports = function(bot) {
       const keyboard = {
         inline_keyboard: [
           [
-            { text: '✅ Checkout', callback_data: 'cart_checkout' },
+            { text: '✅ Checkout', callback_data: 'checkout_from_cart' },
             { text: '🗑️ Clear', callback_data: 'cart_clear' }
           ],
           [{ text: '« Continue Shopping', callback_data: 'pback_countries' }]
@@ -63,13 +63,9 @@ module.exports = function(bot) {
     });
   }
 
-  // Handle cart callbacks
-  bot.on('callback_query', async (query) => {
+  // Export handler for callback routing
+  bot._handleCartCallback = async function(query) {
     const data = query.data;
-    
-    // Only handle cart callbacks
-    if (!data.startsWith('cart_')) return;
-
     const chatId = query.message.chat.id;
 
     try {
@@ -88,68 +84,15 @@ module.exports = function(bot) {
             message_id: query.message.message_id
           });
         });
-        return;
+        return true;
       }
 
-      // Checkout
-      if (data === 'cart_checkout') {
-        db.all(`SELECT * FROM cart WHERE user_id = ?`, [chatId], (err, rows) => {
-          if (err || !rows || rows.length === 0) {
-            bot.answerCallbackQuery(query.id, { text: 'Cart is empty!', show_alert: true });
-            return;
-          }
-
-          const orderRef = 'REF' + Date.now().toString().slice(-8);
-          let total = 0;
-          let currency = '';
-
-          rows.forEach(item => {
-            const product = getProductById(item.product_id);
-            if (product) {
-              total += item.price;
-              currency = product.currency;
-            }
-          });
-
-          // Create order
-          db.run(
-            `INSERT INTO orders (user_id, reference, total_amount, currency, status, created_at) VALUES (?, ?, ?, ?, 'pending', datetime('now'))`,
-            [chatId, orderRef, total, currency],
-            (err) => {
-              if (err) {
-                console.error('Order create error:', err);
-                bot.answerCallbackQuery(query.id, { text: 'Error creating order', show_alert: true });
-                return;
-              }
-
-              // Clear cart
-              db.run(`DELETE FROM cart WHERE user_id = ?`, [chatId]);
-
-              bot.answerCallbackQuery(query.id, { text: '✅ Order created!' });
-
-              bot.sendMessage(
-                chatId,
-                `✅ *Order Created!*\n\n` +
-                `📝 Reference: \`${orderRef}\`\n` +
-                `💰 Total: ${currency} ${total}\n\n` +
-                `━━━━━━━━━━━━━━━\n\n` +
-                `*Payment Instructions:*\n\n` +
-                `Please transfer to:\n` +
-                `💳 Trust Wallet\n` +
-                `📱 0x123...ABC\n\n` +
-                `⚠️ *Include reference:* \`${orderRef}\`\n\n` +
-                `Send screenshot after payment for verification.`,
-                { parse_mode: 'Markdown' }
-              );
-            }
-          );
-        });
-        return;
-      }
+      return false;
 
     } catch (error) {
       console.error('Cart callback error:', error);
-      bot.answerCallbackQuery(query.id, { text: 'An error occurred', show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: 'An error occurred', show_alert: true });
+      return true;
     }
-  });
+  };
 };

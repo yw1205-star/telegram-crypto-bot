@@ -3,7 +3,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 const path = require('path');
 
-// Add Express for health check
+// Express health check
 const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -18,16 +18,13 @@ app.listen(PORT, '0.0.0.0', () => {
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) {
-  console.error('❌ TELEGRAM_BOT_TOKEN missing in .env');
+  console.error('❌ TELEGRAM_BOT_TOKEN missing');
   process.exit(1);
 }
 
 const bot = new TelegramBot(token, { polling: true });
 console.log('✅ Bot starting…');
 console.log('💰 Payment mode:', process.env.PAYMENT_MODE || 'LIVE');
-
-// Database will auto-initialize from database.js
-// No need for setupDatabase() call
 
 // Auto-load commands
 const commandsDir = path.join(__dirname, 'commands');
@@ -45,6 +42,46 @@ fs.readdirSync(commandsDir).forEach((file) => {
   }
 });
 
+// CENTRALIZED CALLBACK ROUTER
+bot.on('callback_query', async (query) => {
+  const data = query.data;
+  
+  try {
+    // Route to products
+    if (data.startsWith('p')) {
+      if (bot._handleProductCallback) {
+        const handled = await bot._handleProductCallback(query);
+        if (handled) return;
+      }
+    }
+    
+    // Route to cart
+    if (data.startsWith('cart_')) {
+      if (bot._handleCartCallback) {
+        const handled = await bot._handleCartCallback(query);
+        if (handled) return;
+      }
+    }
+    
+    // Route to orders
+    if (data === 'checkout_from_cart' || data.startsWith('paid_') || data === 'cancel_checkout') {
+      if (bot._handleOrderCallback) {
+        const handled = await bot._handleOrderCallback(query);
+        if (handled) return;
+      }
+    }
+    
+  } catch (error) {
+    console.error('Callback routing error:', error);
+    try {
+      await bot.answerCallbackQuery(query.id, { 
+        text: 'An error occurred', 
+        show_alert: true 
+      });
+    } catch (e) {}
+  }
+});
+
 // Error handlers
 bot.on('polling_error', (err) => {
   console.error('❌ polling_error:', err?.message || err);
@@ -59,4 +96,4 @@ process.on('uncaughtException', (e) => {
   process.exit(1); 
 });
 
-console.log('🚀 Bot is now running!');
+console.log
