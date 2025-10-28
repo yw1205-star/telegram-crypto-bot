@@ -1,4 +1,4 @@
-// data/products.js
+// data/products.js - COMPLETE & WORKING
 
 const products = {
   malaysia: [
@@ -15,7 +15,8 @@ const products = {
       },
       currency: 'MYR',
       description: 'Premium quality Platinum Kush',
-      inStock: true
+      inStock: true,
+      image: '🌿'
     },
     {
       id: 'my_sour_diesel',
@@ -30,7 +31,8 @@ const products = {
       },
       currency: 'MYR',
       description: 'Premium quality Sour Diesel',
-      inStock: true
+      inStock: true,
+      image: '🌿'
     },
     {
       id: 'my_vice_city',
@@ -45,7 +47,8 @@ const products = {
       },
       currency: 'MYR',
       description: 'Premium quality Vice City',
-      inStock: true
+      inStock: true,
+      image: '🌿'
     }
   ],
 
@@ -55,15 +58,16 @@ const products = {
       name: 'Platinum Kush',
       category: 'Premium Strain',
       price: {
-        '1g': 144,   // 120 * 1.2 = 144
-        '3g': 420,   // 350 * 1.2 = 420
-        '7g': 756,   // 630 * 1.2 = 756
-        '14g': 1320, // 1100 * 1.2 = 1320
-        '28g': 1680  // 1400 * 1.2 = 1680
+        '1g': 144,
+        '3g': 420,
+        '7g': 756,
+        '14g': 1320,
+        '28g': 1680
       },
       currency: 'SGD',
       description: 'Premium quality Platinum Kush',
-      inStock: true
+      inStock: true,
+      image: '🌿'
     },
     {
       id: 'sg_sour_diesel',
@@ -78,7 +82,8 @@ const products = {
       },
       currency: 'SGD',
       description: 'Premium quality Sour Diesel',
-      inStock: true
+      inStock: true,
+      image: '🌿'
     },
     {
       id: 'sg_vice_city',
@@ -93,7 +98,8 @@ const products = {
       },
       currency: 'SGD',
       description: 'Premium quality Vice City',
-      inStock: true
+      inStock: true,
+      image: '🌿'
     }
   ],
 
@@ -103,15 +109,16 @@ const products = {
       name: 'Platinum Kush',
       category: 'Premium Strain',
       price: {
-        '1g': 108,   // 120 * 0.9 = 108
-        '3g': 315,   // 350 * 0.9 = 315
-        '7g': 567,   // 630 * 0.9 = 567
-        '14g': 990,  // 1100 * 0.9 = 990
-        '28g': 1260  // 1400 * 0.9 = 1260
+        '1g': 108,
+        '3g': 315,
+        '7g': 567,
+        '14g': 990,
+        '28g': 1260
       },
       currency: 'THB',
       description: 'Premium quality Platinum Kush',
-      inStock: true
+      inStock: true,
+      image: '🌿'
     },
     {
       id: 'th_sour_diesel',
@@ -126,7 +133,8 @@ const products = {
       },
       currency: 'THB',
       description: 'Premium quality Sour Diesel',
-      inStock: true
+      inStock: true,
+      image: '🌿'
     },
     {
       id: 'th_vice_city',
@@ -141,20 +149,19 @@ const products = {
       },
       currency: 'THB',
       description: 'Premium quality Vice City',
-      inStock: true
+      inStock: true,
+      image: '🌿'
     }
   ]
 };
 
-// Available countries
 const countries = ['malaysia', 'singapore', 'thailand'];
 
-// Get products by country
 function getProductsByCountry(country) {
-  return products[country.toLowerCase()] || [];
+  const countryLower = country.toLowerCase();
+  return products[countryLower] || [];
 }
 
-// Get product by ID
 function getProductById(productId) {
   for (const country in products) {
     const product = products[country].find(p => p.id === productId);
@@ -163,9 +170,18 @@ function getProductById(productId) {
   return null;
 }
 
+function getAllProducts() {
+  const allProducts = [];
+  for (const country in products) {
+    allProducts.push(...products[country]);
+  }
+  return allProducts;
+}
+
 module.exports = {
   products,
   countries,
   getProductsByCountry,
-  getProductById
+  getProductById,
+  getAllProducts
 };

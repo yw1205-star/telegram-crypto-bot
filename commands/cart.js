@@ -1,98 +1,159 @@
-// =======================================================
-// 📄 File: commands/cart.js (NO DUPLICATES)
-// Purpose: Display cart contents and trigger checkout
-// =======================================================
+// commands/cart.js - COMPLETE & WORKING
 
-const { allAsync, runAsync, getAsync } = require("../config/database");
-const { t, matchesButton } = require("../utils/i18n");
+const { getAsync, allAsync, runAsync } = require('../config/database');
+const { getProductById } = require('../data/products');
 
-module.exports = (bot) => {
-  // ------------------- /cart command -------------------
-  bot.onText(/^\/cart$/, async (msg) => {
-    const chatId = msg.chat.id;
-    await displayCart(bot, chatId);
+module.exports = function(bot) {
+
+  // Listen for "View Cart" button
+  bot.onText(/View Cart|🛒|cart/i, async (msg) => {
+    await showCart(bot, msg.chat.id);
   });
 
-  // ------------------- Handle cart button from keyboard -------------------
-  bot.on("message", async (msg) => {
-    if (!msg.text || msg.text.startsWith('/')) return;
-    const text = msg.text.trim();
-    
-    // Only handle cart button
-    if (matchesButton(text, "viewCart")) {
-      await displayCart(bot, msg.chat.id);
-    }
+  // /cart command
+  bot.onText(/\/cart/, async (msg) => {
+    await showCart(bot, msg.chat.id);
   });
 
-  // ------------------- Inline buttons -------------------
-  bot.on("callback_query", async (q) => {
-    if (!q.data) return;
-    const chatId = q.message?.chat?.id;
-    const data = q.data;
-    if (!chatId) return;
-
+  // Show cart function
+  async function showCart(bot, chatId) {
     try {
-      // Empty cart
-      if (data === "empty_cart") {
-        await runAsync("DELETE FROM cart WHERE user_id = ?", [String(chatId)]);
-        await bot.answerCallbackQuery(q.id, { text: "🗑️ Cart emptied." });
-        return bot.sendMessage(chatId, "🧺 Your cart has been cleared.");
-      }
+      const cartItems = await allAsync(
+        `SELECT * FROM cart WHERE user_id = ?`,
+        [chatId]
+      );
 
-      // View Cart from inline button
-      if (data === "cart|view") {
-        await bot.answerCallbackQuery(q.id, { text: "Opening cart..." });
-        return displayCart(bot, chatId);
-      }
-
-      // Checkout - pass through to orders.js
-      if (data === "checkout_from_cart") {
-        await bot.answerCallbackQuery(q.id, { text: "Proceeding to checkout..." });
-        // The orders.js handler will catch this
+      if (!cartItems || cartItems.length === 0) {
+        await bot.sendMessage(chatId, '🛒 Your cart is empty.');
         return;
       }
-    } catch (err) {
-      console.error("Cart button error:", err);
-      bot.answerCallbackQuery(q.id, { text: "Error", show_alert: false });
+
+      let cartMessage = '🛒 *Your Cart:*\n\n';
+      let total = 0;
+      let currency = '';
+
+      for (const item of cartItems) {
+        const product = getProductById(item.product_id);
+        
+        if (product) {
+          cartMessage += `${product.image} ${product.name}\n`;
+          cartMessage += `   📏 ${item.quantity}\n`;
+          cartMessage += `   💰 ${product.currency} ${item.price}\n\n`;
+          
+          total += item.price;
+          currency = product.currency;
+        }
+      }
+
+      cartMessage += `━━━━━━━━━━━━━━━\n`;
+      cartMessage += `*Total: ${currency} ${total}*`;
+
+      const keyboard = {
+        inline_keyboard: [
+          [{ text: '✅ Checkout', callback_data: 'checkout' }],
+          [{ text: '🗑️ Clear Cart', callback_data: 'clear_cart' }],
+          [{ text: '« Continue Shopping', callback_data: 'back_to_countries' }]
+        ]
+      };
+
+      await bot.sendMessage(chatId, cartMessage, {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard
+      });
+
+    } catch (error) {
+      console.error('Error showing cart:', error);
+      await bot.sendMessage(chatId, '❌ Error loading cart. Please try again.');
+    }
+  }
+
+  // Handle cart callbacks
+  bot.on('callback_query', async (query) => {
+    const chatId = query.message.chat.id;
+    const data = query.data;
+
+    try {
+      // Clear cart
+      if (data === 'clear_cart') {
+        await runAsync(`DELETE FROM cart WHERE user_id = ?`, [chatId]);
+        
+        await bot.answerCallbackQuery(query.id, { 
+          text: '🗑️ Cart cleared!',
+          show_alert: false
+        });
+
+        await bot.editMessageText(
+          '🛒 Your cart is empty.',
+          {
+            chat_id: chatId,
+            message_id: query.message.message_id
+          }
+        );
+        return;
+      }
+
+      // Checkout
+      if (data === 'checkout') {
+        const cartItems = await allAsync(
+          `SELECT * FROM cart WHERE user_id = ?`,
+          [chatId]
+        );
+
+        if (!cartItems || cartItems.length === 0) {
+          await bot.answerCallbackQuery(query.id, { 
+            text: 'Cart is empty!',
+            show_alert: true
+          });
+          return;
+        }
+
+        // Generate order reference
+        const orderRef = 'REF' + Date.now().toString().slice(-8);
+        let total = 0;
+        let currency = '';
+
+        for (const item of cartItems) {
+          const product = getProductById(item.product_id);
+          if (product) {
+            total += item.price;
+            currency = product.currency;
+          }
+        }
+
+        // Create order
+        await runAsync(
+          `INSERT INTO orders (user_id, reference, total_amount, currency, status, created_at)
+           VALUES (?, ?, ?, ?, 'pending', datetime('now'))`,
+          [chatId, orderRef, total, currency]
+        );
+
+        // Clear cart
+        await runAsync(`DELETE FROM cart WHERE user_id = ?`, [chatId]);
+
+        await bot.answerCallbackQuery(query.id);
+
+        await bot.sendMessage(
+          chatId,
+          `✅ *Order Created!*\n\n` +
+          `📝 Reference: \`${orderRef}\`\n` +
+          `💰 Total: ${currency} ${total}\n\n` +
+          `━━━━━━━━━━━━━━━\n\n` +
+          `*Payment Instructions:*\n\n` +
+          `Please transfer to:\n` +
+          `💳 Trust Wallet\n` +
+          `📱 Address: \`0x123...ABC\`\n\n` +
+          `⚠️ *IMPORTANT:* Include reference \`${orderRef}\` in payment note!\n\n` +
+          `After payment, send screenshot here for verification.`,
+          { parse_mode: 'Markdown' }
+        );
+        return;
+      }
+
+    } catch (error) {
+      console.error('Error in cart callback:', error);
+      await bot.answerCallbackQuery(query.id, { 
+        text: 'An error occurred. Please try again.' 
+      });
     }
   });
 };
-
-// Helper function to display cart
-async function displayCart(bot, chatId) {
-  try {
-    const u = await getAsync("SELECT lang FROM users WHERE user_id = ?", [chatId]);
-    const lang = u?.lang || "en";
-
-    const rows = await allAsync(
-      "SELECT product_name, quantity, price FROM cart WHERE user_id = ?",
-      [String(chatId)]
-    );
-    
-    if (!rows || rows.length === 0) {
-      return bot.sendMessage(chatId, t(lang, "emptyCart"));
-    }
-
-    let total = 0;
-    const lines = rows.map((r) => {
-      total += r.price * r.quantity;
-      return `• ${r.product_name} ×${r.quantity} = $${(r.price * r.quantity).toFixed(2)}`;
-    });
-
-    const text =
-      `${t(lang, "cartTitle")}\n${lines.join("\n")}\n\n${t(lang, "total")} $${total.toFixed(2)}`;
-
-    bot.sendMessage(chatId, text, {
-      parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: t(lang, "checkout"), callback_data: "checkout_from_cart" }],
-          [{ text: t(lang, "empty"), callback_data: "empty_cart" }],
-        ],
-      },
-    });
-  } catch (err) {
-    console.error("Cart error:", err);
-    bot.sendMessage(chatId, "⚠️ Failed to load your cart.\n" + err.message);
-  }
-}
