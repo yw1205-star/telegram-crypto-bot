@@ -150,28 +150,35 @@ module.exports = function(bot) {
       await bot.answerCallbackQuery(query.id);
     }
 
-    // Add to cart
-    if (data.startsWith('addcart_')) {
-      const [, productId, quantity] = data.split('_');
-      const product = getProductById(productId);
+    // Add to cart (FIXED VERSION)
+if (data.startsWith('addcart_')) {
+  // Remove 'addcart_' prefix
+  const parts = data.replace('addcart_', '');
+  
+  // Split by last underscore to get quantity
+  const lastUnderscore = parts.lastIndexOf('_');
+  const productId = parts.substring(0, lastUnderscore);
+  const quantity = parts.substring(lastUnderscore + 1);
+  
+  const product = getProductById(productId);
 
-      if (!product) {
-        await bot.answerCallbackQuery(query.id, { text: 'Product not found' });
-        return;
-      }
+  if (!product) {
+    await bot.answerCallbackQuery(query.id, { text: 'Product not found' });
+    return;
+  }
 
-      await bot.answerCallbackQuery(query.id, { 
-        text: `Added ${quantity} ${product.name} to cart!` 
-      });
+  await bot.answerCallbackQuery(query.id, { 
+    text: `Added ${quantity} ${product.name} to cart!` 
+  });
 
-      await bot.sendMessage(
-        chatId,
-        `✅ Added to cart:\n\n` +
-        `📦 ${product.name}\n` +
-        `📏 ${quantity}\n` +
-        `💰 ${product.currency} ${product.price[quantity]}\n\n` +
-        `Use /cart to view your cart`
-      );
-    }
+  await bot.sendMessage(
+    chatId,
+    `✅ Added to cart:\n\n` +
+    `📦 ${product.name}\n` +
+    `📏 ${quantity}\n` +
+    `💰 ${product.currency} ${product.price[quantity]}\n\n` +
+    `Use /cart to view your cart`
+  );
+}
   });
 };
