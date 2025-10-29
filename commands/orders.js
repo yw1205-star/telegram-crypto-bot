@@ -1,11 +1,7 @@
-// commands/orders.js - FIXED
+// commands/orders.js - Simple manual verification
 
 const { runAsync, allAsync, getAsync } = require("../config/database");
-const payments = require("../utils/payments");
-const { verifyPaymentAI } = require("../utils/aiVerifier");
-const { t } = require("../utils/i18n");
 
-// UPDATED WALLET ADDRESS
 const TRUST_WALLET_ADDRESS = "0xBEDA1c97d4d1bAc06AE7C278b920261576176937";
 const ADMIN_CHAT_ID = 6328508264;
 
@@ -23,24 +19,14 @@ module.exports = (bot) => {
         return true;
       }
 
-      if (data === "paid_claim") {
-        await askProofOptions(bot, chatId, query);
-        return true;
-      }
-
-      if (data === "paid_auto") {
-        await handleAutoConfirm(bot, chatId, query);
-        return true;
-      }
-
       if (data === "paid_upload") {
         await handleUploadProof(bot, chatId, query);
         return true;
       }
 
       if (data === "cancel_checkout") {
-        try { await bot.answerCallbackQuery(query.id, { text: t("en","cancel") }); } catch {}
-        bot.sendMessage(chatId, t("en","cancel"));
+        try { await bot.answerCallbackQuery(query.id, { text: "Cancelled" }); } catch {}
+        bot.sendMessage(chatId, "❌ Order cancelled.");
         return true;
       }
 
@@ -48,175 +34,169 @@ module.exports = (bot) => {
 
     } catch (err) {
       console.error("Orders callback error:", err);
-      try { bot.answerCallbackQuery(query.id, { text: "Error processing request" }); } catch {}
-      bot.sendMessage(chatId, "⚠️ An error occurred while processing checkout.");
+      try { bot.answerCallbackQuery(query.id, { text: "Error" }); } catch {}
+      bot.sendMessage(chatId, "⚠️ An error occurred.");
       return true;
     }
   };
 };
 
 async function startCheckout(bot, chatId, q) {
-  const u = await getAsync("SELECT lang FROM users WHERE user_id = ?", [chatId]);
-  const lang = u?.lang || "en";
-
   const items = await allAsync(
     "SELECT product_name, quantity, price FROM cart WHERE user_id = ?",
     [String(chatId)]
   );
 
   if (!items || items.length === 0) {
-    try { await bot.answerCallbackQuery(q.id, { text: t(lang, "emptyCart") }); } catch {}
-    return bot.sendMessage(chatId, t(lang, "emptyCart"));
+    try { await bot.answerCallbackQuery(q.id, { text: "Cart is empty" }); } catch {}
+    return bot.sendMessage(chatId, "🛒 Your cart is empty.");
   }
 
-  // FIX: Properly calculate total
-  const total = items.reduce((s, r) => {
-    const qty = 1; // quantity is already in the price from cart
-    return s + (r.price * qty);
-  }, 0);
-  
-  const summary = items.map(r => {
-    return `• ${r.product_name} x${r.quantity} = $${(r.price).toFixed(2)}`;
-  }).join("\n");
+  // Simple total - NO unique cents
+  const total = items.reduce((s, r) => s + r.price, 0);
+  const summary = items.map(r => `• ${r.product_name} x${r.quantity} = $${r.price.toFixed(2)}`).join("\n");
 
-  const ref = payments.createRef();
-  const { amountDue, centsSuffix } = payments.createUniqueAmount(total);
+  // Generate reference for tracking only
+  const ref = 'REF' + Date.now().toString().slice(-8);
 
+  // Insert order
   await runAsync(
-    `INSERT INTO orders (user_id, items, total, currency, status, ref_code, cents_suffix, amount_due)
-     VALUES (?, ?, ?, ?, 'verifying', ?, ?, ?)`,
-    [chatId, JSON.stringify(items), total, "USD", ref, centsSuffix, amountDue]
+    `INSERT INTO orders (user_id, items, total, currency, status, ref_code, amount_due, created_at)
+     VALUES (?, ?, ?, ?, 'pending', ?, ?, datetime('now'))`,
+    [chatId, JSON.stringify(items), total, "USD", ref, total]
   );
 
   const textLines = [
-    `🧾 *Checkout*`,
+    `🧾 *Checkout - Order ${ref}*`,
+    ``,
     `${summary}`,
     ``,
-    `💰 *Total:* $${total.toFixed(2)} USD`,
+    `━━━━━━━━━━━━━━━`,
+    `💰 *Total Amount: $${total.toFixed(2)} USD*`,
+    `━━━━━━━━━━━━━━━`,
     ``,
-    `Please pay: *$${amountDue.toFixed(2)}*`,
-    `*Reference:* \`${ref}\``,
+    `📝 *Reference Code:* \`${ref}\``,
     ``,
-    `*Trust Wallet Address:*`,
+    `💳 *Trust Wallet Address:*`,
     `\`${TRUST_WALLET_ADDRESS}\``,
     ``,
-    `After payment, tap the button below.`
+    `⚠️ *Please include reference \`${ref}\` in your payment note!*`,
+    ``,
+    `After payment, click the button below to submit proof.`
   ].join("\n");
 
   await bot.sendMessage(chatId, textLines, {
     parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [
-        [{ text: "✅ I have paid", callback_data: "paid_claim" }],
-        [{ text: "❌ Cancel", callback_data: "cancel_checkout" }]
+        [{ text: "📤 Submit Payment Proof", callback_data: "paid_upload" }],
+        [{ text: "❌ Cancel Order", callback_data: "cancel_checkout" }]
       ]
     }
   });
 
-  try { await bot.answerCallbackQuery(q.id, { text: "Checkout created" }); } catch {}
-}
-
-async function askProofOptions(bot, chatId, q) {
-  const u = await getAsync("SELECT lang FROM users WHERE user_id = ?", [chatId]);
-  const lang = u?.lang || "en";
-
-  try { await bot.answerCallbackQuery(q.id, { text: "Confirm payment" }); } catch {}
-
-  await bot.sendMessage(chatId, "How would you like to confirm payment?", {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "🟢 Auto-confirm (AI)", callback_data: "paid_auto" }],
-        [{ text: "📤 Upload Proof", callback_data: "paid_upload" }]
-      ]
-    }
-  });
-}
-
-async function handleAutoConfirm(bot, chatId, q) {
-  try { await bot.answerCallbackQuery(q.id, { text: "Auto-confirm started" }); } catch {}
-  await payments.simulateVerificationDelay(2500);
-  await verifyAndConfirm(bot, chatId, "auto-simulated");
+  try { await bot.answerCallbackQuery(q.id, { text: "Order created!" }); } catch {}
 }
 
 async function handleUploadProof(bot, chatId, q) {
-  try { await bot.answerCallbackQuery(q.id, { text: "Upload proof selected" }); } catch {}
+  try { 
+    await bot.answerCallbackQuery(q.id, { text: "Please send payment proof" }); 
+  } catch {}
 
-  await bot.sendMessage(chatId, "Please reply with the transaction hash or attach a photo.", {
-    parse_mode: "Markdown",
-    reply_markup: { force_reply: true }
-  });
+  await bot.sendMessage(
+    chatId, 
+    "📤 *Submit Payment Proof*\n\n" +
+    "Please send:\n" +
+    "• Transaction hash/ID, OR\n" +
+    "• Screenshot of payment receipt\n\n" +
+    "Our team will verify and confirm your order within 24 hours.",
+    {
+      parse_mode: "Markdown",
+      reply_markup: { force_reply: true }
+    }
+  );
 
   const handler = async (msg) => {
     if (msg.chat.id !== chatId) return;
     bot.removeListener("message", handler);
-    const proofText = msg.text || (msg.photo && msg.photo.length ? "[photo-attached]" : "");
+    
+    const proofText = msg.text || "";
+    const hasPhoto = msg.photo && msg.photo.length > 0;
+    
+    if (!proofText && !hasPhoto) {
+      return bot.sendMessage(chatId, "⚠️ Please provide payment proof (transaction hash or screenshot).");
+    }
+
     try {
-      await verifyAndConfirm(bot, chatId, proofText);
+      await submitToAdmin(bot, chatId, proofText, hasPhoto, msg);
     } catch (e) {
-      console.error("verifyAndConfirm error:", e);
-      bot.sendMessage(chatId, "Verification failed.");
+      console.error("Submit error:", e);
+      bot.sendMessage(chatId, "⚠️ Error submitting proof. Please contact our customer service.");
     }
   };
 
   bot.on("message", handler);
 }
 
-async function verifyAndConfirm(bot, chatId, proofText) {
+async function submitToAdmin(bot, chatId, proofText, hasPhoto, msg) {
   const order = await getAsync(
-    "SELECT * FROM orders WHERE user_id = ? AND status IN ('verifying','pending') ORDER BY id DESC LIMIT 1",
+    "SELECT * FROM orders WHERE user_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1",
     [chatId]
   );
 
   if (!order) {
-    return bot.sendMessage(chatId, "⚠️ No pending order found.");
+    return bot.sendMessage(chatId, "⚠️ No pending order found. Please create an order first.");
   }
 
-  const aiResult = await verifyPaymentAI({
-    proofText,
-    amountDue: order.amount_due,
-    ref: order.ref_code
-  });
-
-  if (!aiResult.ok) {
-    await runAsync("UPDATE orders SET status = ? WHERE id = ?", ["pending_review", order.id]);
-    await bot.sendMessage(chatId, `⚠️ ${aiResult.reason || "Payment not auto-confirmed. Admin will review."}`);
-
-    const items = JSON.parse(order.items || "[]");
-    const summary = items.map(r => `• ${r.product_name} x${r.quantity} = $${r.price.toFixed(2)}`).join("\n");
-    const adminMsg = [
-      `⚠️ *Manual review required*`,
-      `Order ID: ${order.id}`,
-      `User: ${chatId}`,
-      `Ref: ${order.ref_code}`,
-      `Amount Due: $${order.amount_due}`,
-      `Reason: ${aiResult.reason}`,
-      ``,
-      `Items:\n${summary}`,
-      `Proof: ${proofText}`
-    ].join("\n");
-
-    try { await bot.sendMessage(ADMIN_CHAT_ID, adminMsg, { parse_mode: "Markdown" }); } catch (e) { console.error("Admin notify error:", e); }
-    return;
-  }
-
-  await runAsync("UPDATE orders SET status='paid', paid_at=CURRENT_TIMESTAMP, payment_proof=? WHERE id=?", [proofText, order.id]);
-  await runAsync("DELETE FROM cart WHERE user_id = ?", [String(chatId)]);
+  // Update order with proof
+  await runAsync(
+    "UPDATE orders SET payment_proof = ?, status = 'pending_review' WHERE id = ?", 
+    [proofText || "[photo-attached]", order.id]
+  );
 
   const items = JSON.parse(order.items || "[]");
   const summary = items.map(r => `• ${r.product_name} x${r.quantity} = $${r.price.toFixed(2)}`).join("\n");
-  
-  await bot.sendMessage(chatId, `✅ *Payment confirmed!* (AI ${(aiResult.confidence || 0)*100}% confidence)\n\n${summary}\n\nYour order #${order.id} is confirmed.`, { parse_mode: "Markdown" });
 
+  // Notify customer
+  await bot.sendMessage(
+    chatId,
+    `✅ *Payment Proof Submitted Successfully!*\n\n` +
+    `📝 Order: ${order.ref_code}\n` +
+    `💰 Amount: $${order.total.toFixed(2)} USD\n\n` +
+    `Your payment is being verified by our team.\n` +
+    `You will receive confirmation within 24 hours.\n\n` +
+    `Thank you for your order! 🙏`,
+    { parse_mode: "Markdown" }
+  );
+
+  // Notify admin
   const adminMsg = [
-    `📥 *New Paid Order*`,
-    `Order ID: ${order.id}`,
-    `User: ${chatId}`,
-    `Ref: ${order.ref_code}`,
-    `Amount Paid: $${order.amount_due}`,
+    `🔔 *NEW PAYMENT PROOF RECEIVED*`,
     ``,
-    `Items:\n${summary}`,
-    `Payment proof: ${proofText}`
+    `📝 Order: ${order.ref_code}`,
+    `👤 Customer ID: ${chatId}`,
+    `💰 Amount: $${order.total.toFixed(2)} USD`,
+    ``,
+    `📦 *Order Details:*`,
+    `${summary}`,
+    ``,
+    `💳 *Payment Proof:*`,
+    `${proofText || "[See photo below]"}`,
+    ``,
+    `⚠️ *Action Required:* Please verify payment in Trust Wallet and confirm order.`
   ].join("\n");
 
-  try { await bot.sendMessage(ADMIN_CHAT_ID, adminMsg, { parse_mode: "Markdown" }); } catch (e) { console.error("Admin notify error:", e); }
+  try {
+    await bot.sendMessage(ADMIN_CHAT_ID, adminMsg, { parse_mode: "Markdown" });
+    
+    // Forward photo if customer sent one
+    if (hasPhoto) {
+      await bot.forwardMessage(ADMIN_CHAT_ID, chatId, msg.message_id);
+    }
+  } catch (e) {
+    console.error("Admin notify error:", e);
+  }
+
+  // Clear cart after order is created
+  await runAsync("DELETE FROM cart WHERE user_id = ?", [String(chatId)]);
 }
