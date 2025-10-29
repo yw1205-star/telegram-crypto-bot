@@ -47,7 +47,7 @@ bot.on('callback_query', async (query) => {
   const data = query.data;
   
   try {
-    // Route to products
+    // Route to products (starts with 'p')
     if (data.startsWith('p')) {
       if (bot._handleProductCallback) {
         const handled = await bot._handleProductCallback(query);
@@ -55,16 +55,16 @@ bot.on('callback_query', async (query) => {
       }
     }
     
-    // Route to cart
-    if (data.startsWith('cart_')) {
+    // Route to cart (ONLY cart_clear)
+    if (data === 'cart_clear') {
       if (bot._handleCartCallback) {
         const handled = await bot._handleCartCallback(query);
         if (handled) return;
       }
     }
     
-    // Route to orders
-    if (data === 'checkout_from_cart' || data.startsWith('paid_') || data === 'cancel_checkout') {
+    // Route to orders (checkout and payment proof)
+    if (data === 'checkout_from_cart' || data === 'paid_upload' || data === 'cancel_checkout') {
       if (bot._handleOrderCallback) {
         const handled = await bot._handleOrderCallback(query);
         if (handled) return;

@@ -1,4 +1,4 @@
-// commands/cart.js - NO callback_query listener
+// commands/cart.js - Remove checkout handling
 
 const { db } = require('../config/database');
 const { getProductById } = require('../data/products');
@@ -49,10 +49,14 @@ module.exports = function(bot) {
       const keyboard = {
         inline_keyboard: [
           [
-            { text: '✅ Checkout', callback_data: 'checkout_from_cart' },
-            { text: '🗑️ Clear', callback_data: 'cart_clear' }
+            { text: '✅ Checkout', callback_data: 'checkout_from_cart' }
           ],
-          [{ text: '« Continue Shopping', callback_data: 'pback_countries' }]
+          [
+            { text: '🗑️ Clear Cart', callback_data: 'cart_clear' }
+          ],
+          [
+            { text: '« Continue Shopping', callback_data: 'pback_countries' }
+          ]
         ]
       };
 
@@ -63,13 +67,13 @@ module.exports = function(bot) {
     });
   }
 
-  // Export handler for callback routing
+  // Export handler for callback routing - ONLY HANDLE cart_clear
   bot._handleCartCallback = async function(query) {
     const data = query.data;
     const chatId = query.message.chat.id;
 
     try {
-      // Clear cart
+      // ONLY handle cart_clear - NOT checkout!
       if (data === 'cart_clear') {
         db.run(`DELETE FROM cart WHERE user_id = ?`, [chatId], (err) => {
           if (err) {
@@ -91,7 +95,9 @@ module.exports = function(bot) {
 
     } catch (error) {
       console.error('Cart callback error:', error);
-      await bot.answerCallbackQuery(query.id, { text: 'An error occurred', show_alert: true });
+      try {
+        await bot.answerCallbackQuery(query.id, { text: 'An error occurred', show_alert: true });
+      } catch (e) {}
       return true;
     }
   };
