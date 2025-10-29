@@ -1,4 +1,4 @@
-// commands/products.js - NO callback_query listener
+// commands/products.js - FIXED with error handling
 
 const { getProductsByCountry, getProductById } = require('../data/products');
 const { db } = require('../config/database');
@@ -62,15 +62,25 @@ module.exports = function(bot) {
 
         productButtons.push([{ text: '« Back', callback_data: 'pback_countries' }]);
 
-        await bot.editMessageText(
-          `📍 *${country.charAt(0).toUpperCase() + country.slice(1)}*\n\nSelect a product:`,
-          {
+        const messageText = `📍 *${country.charAt(0).toUpperCase() + country.slice(1)}*\n\nSelect a product:`;
+        
+        // Try to edit, if fails send new message
+        try {
+          await bot.editMessageText(messageText, {
             chat_id: chatId,
             message_id: messageId,
             parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: productButtons }
+          });
+        } catch (editErr) {
+          if (editErr.message && editErr.message.includes('message is not modified')) {
+            // Message is the same, just answer callback
+            await bot.answerCallbackQuery(query.id, { text: 'Already on this page' });
+          } else {
+            throw editErr;
           }
-        );
+        }
+        
         await bot.answerCallbackQuery(query.id);
         return true;
       }
@@ -92,15 +102,24 @@ module.exports = function(bot) {
 
         quantityButtons.push([{ text: '« Back', callback_data: `pcountry_${productId.split('_')[0]}` }]);
 
-        await bot.editMessageText(
-          `${product.image} *${product.name}*\n\n${product.description}\n\nSelect quantity:`,
-          {
+        const messageText = `${product.image} *${product.name}*\n\n${product.description}\n\nSelect quantity:`;
+        
+        // Try to edit, if fails send new message
+        try {
+          await bot.editMessageText(messageText, {
             chat_id: chatId,
             message_id: messageId,
             parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: quantityButtons }
+          });
+        } catch (editErr) {
+          if (editErr.message && editErr.message.includes('message is not modified')) {
+            await bot.answerCallbackQuery(query.id, { text: 'Already viewing this product' });
+          } else {
+            throw editErr;
           }
-        );
+        }
+        
         await bot.answerCallbackQuery(query.id);
         return true;
       }
@@ -144,7 +163,31 @@ module.exports = function(bot) {
 
       // Back to countries
       if (data === 'pback_countries') {
-        showCountrySelection(bot, chatId);
+        const keyboard = {
+          inline_keyboard: [
+            [{ text: '🇲🇾 Malaysia', callback_data: 'pcountry_malaysia' }],
+            [{ text: '🇸🇬 Singapore', callback_data: 'pcountry_singapore' }],
+            [{ text: '🇹🇭 Thailand', callback_data: 'pcountry_thailand' }]
+          ]
+        };
+
+        const messageText = '📍 Choose your country:';
+        
+        // Try to edit, if fails send new message
+        try {
+          await bot.editMessageText(messageText, {
+            chat_id: chatId,
+            message_id: messageId,
+            reply_markup: keyboard
+          });
+        } catch (editErr) {
+          if (editErr.message && editErr.message.includes('message is not modified')) {
+            await bot.answerCallbackQuery(query.id, { text: 'Already on countries page' });
+          } else {
+            throw editErr;
+          }
+        }
+        
         await bot.answerCallbackQuery(query.id);
         return true;
       }
@@ -153,7 +196,11 @@ module.exports = function(bot) {
 
     } catch (error) {
       console.error('Product callback error:', error);
-      await bot.answerCallbackQuery(query.id, { text: 'An error occurred', show_alert: true });
+      try {
+        await bot.answerCallbackQuery(query.id, { text: 'An error occurred', show_alert: true });
+      } catch (e) {
+        // Ignore if can't answer callback
+      }
       return true;
     }
   };
