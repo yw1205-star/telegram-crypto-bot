@@ -1,16 +1,16 @@
-// commands/orders.js - Updated to use exported handler
+// commands/orders.js - FIXED
 
 const { runAsync, allAsync, getAsync } = require("../config/database");
 const payments = require("../utils/payments");
 const { verifyPaymentAI } = require("../utils/aiVerifier");
 const { t } = require("../utils/i18n");
 
-const TRUST_WALLET_ADDRESS = "0xFAKE1234ABCD5678EF9012345678FAKE";
+// UPDATED WALLET ADDRESS
+const TRUST_WALLET_ADDRESS = "0xBEDA1c97d4d1bAc06AE7C278b920261576176937";
 const ADMIN_CHAT_ID = 6328508264;
 
 module.exports = (bot) => {
   
-  // Export handler for callback routing
   bot._handleOrderCallback = async function(query) {
     const data = query.data;
     const chatId = query.message?.chat?.id;
@@ -69,8 +69,15 @@ async function startCheckout(bot, chatId, q) {
     return bot.sendMessage(chatId, t(lang, "emptyCart"));
   }
 
-  const total = items.reduce((s, r) => s + r.price * r.quantity, 0);
-  const summary = items.map(r => `• ${r.product_name} x${r.quantity} = $${(r.price * r.quantity).toFixed(2)}`).join("\n");
+  // FIX: Properly calculate total
+  const total = items.reduce((s, r) => {
+    const qty = 1; // quantity is already in the price from cart
+    return s + (r.price * qty);
+  }, 0);
+  
+  const summary = items.map(r => {
+    return `• ${r.product_name} x${r.quantity} = $${(r.price).toFixed(2)}`;
+  }).join("\n");
 
   const ref = payments.createRef();
   const { amountDue, centsSuffix } = payments.createUniqueAmount(total);
@@ -82,26 +89,26 @@ async function startCheckout(bot, chatId, q) {
   );
 
   const textLines = [
-    `🧾 *${t(lang,"checkout") || "Checkout"}*`,
+    `🧾 *Checkout*`,
     `${summary}`,
     ``,
-    `${t(lang,"total") || "Total:"} $${total.toFixed(2)} USD`,
+    `💰 *Total:* $${total.toFixed(2)} USD`,
     ``,
-    `${t(lang,"checkoutPayPrompt") || "Please pay"} *$${amountDue.toFixed(2)}*`,
-    `*Reference:* ${ref}`,
+    `Please pay: *$${amountDue.toFixed(2)}*`,
+    `*Reference:* \`${ref}\``,
     ``,
-    `${t(lang,"trustWalletLabel") || "Trust Wallet Address:"}`,
+    `*Trust Wallet Address:*`,
     `\`${TRUST_WALLET_ADDRESS}\``,
     ``,
-    `${t(lang,"checkoutAfterPay") || "After payment, tap the button below."}`
+    `After payment, tap the button below.`
   ].join("\n");
 
   await bot.sendMessage(chatId, textLines, {
     parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [
-        [{ text: t(lang, "confirmPaid") || "✅ I have paid", callback_data: "paid_claim" }],
-        [{ text: t(lang, "cancel") || "❌ Cancel", callback_data: "cancel_checkout" }]
+        [{ text: "✅ I have paid", callback_data: "paid_claim" }],
+        [{ text: "❌ Cancel", callback_data: "cancel_checkout" }]
       ]
     }
   });
@@ -113,9 +120,9 @@ async function askProofOptions(bot, chatId, q) {
   const u = await getAsync("SELECT lang FROM users WHERE user_id = ?", [chatId]);
   const lang = u?.lang || "en";
 
-  try { await bot.answerCallbackQuery(q.id, { text: t(lang, "confirmPaid") || "Confirm payment" }); } catch {}
+  try { await bot.answerCallbackQuery(q.id, { text: "Confirm payment" }); } catch {}
 
-  await bot.sendMessage(chatId, t(lang, "chooseVerifyMethod") || "How would you like to confirm payment?", {
+  await bot.sendMessage(chatId, "How would you like to confirm payment?", {
     reply_markup: {
       inline_keyboard: [
         [{ text: "🟢 Auto-confirm (AI)", callback_data: "paid_auto" }],
@@ -126,22 +133,15 @@ async function askProofOptions(bot, chatId, q) {
 }
 
 async function handleAutoConfirm(bot, chatId, q) {
-  const u = await getAsync("SELECT lang FROM users WHERE user_id = ?", [chatId]);
-  const lang = u?.lang || "en";
-
   try { await bot.answerCallbackQuery(q.id, { text: "Auto-confirm started" }); } catch {}
-
   await payments.simulateVerificationDelay(2500);
   await verifyAndConfirm(bot, chatId, "auto-simulated");
 }
 
 async function handleUploadProof(bot, chatId, q) {
-  const u = await getAsync("SELECT lang FROM users WHERE user_id = ?", [chatId]);
-  const lang = u?.lang || "en";
-
   try { await bot.answerCallbackQuery(q.id, { text: "Upload proof selected" }); } catch {}
 
-  await bot.sendMessage(chatId, t(lang, "uploadProofPrompt") || "Please reply with the transaction hash or attach a photo.", {
+  await bot.sendMessage(chatId, "Please reply with the transaction hash or attach a photo.", {
     parse_mode: "Markdown",
     reply_markup: { force_reply: true }
   });
@@ -154,7 +154,7 @@ async function handleUploadProof(bot, chatId, q) {
       await verifyAndConfirm(bot, chatId, proofText);
     } catch (e) {
       console.error("verifyAndConfirm error:", e);
-      bot.sendMessage(chatId, t(lang, "verifyError") || "Verification failed.");
+      bot.sendMessage(chatId, "Verification failed.");
     }
   };
 
@@ -182,7 +182,7 @@ async function verifyAndConfirm(bot, chatId, proofText) {
     await bot.sendMessage(chatId, `⚠️ ${aiResult.reason || "Payment not auto-confirmed. Admin will review."}`);
 
     const items = JSON.parse(order.items || "[]");
-    const summary = items.map(r => `• ${r.product_name} x${r.quantity} = $${(r.price * r.quantity).toFixed(2)}`).join("\n");
+    const summary = items.map(r => `• ${r.product_name} x${r.quantity} = $${r.price.toFixed(2)}`).join("\n");
     const adminMsg = [
       `⚠️ *Manual review required*`,
       `Order ID: ${order.id}`,
@@ -203,7 +203,7 @@ async function verifyAndConfirm(bot, chatId, proofText) {
   await runAsync("DELETE FROM cart WHERE user_id = ?", [String(chatId)]);
 
   const items = JSON.parse(order.items || "[]");
-  const summary = items.map(r => `• ${r.product_name} x${r.quantity} = $${(r.price * r.quantity).toFixed(2)}`).join("\n");
+  const summary = items.map(r => `• ${r.product_name} x${r.quantity} = $${r.price.toFixed(2)}`).join("\n");
   
   await bot.sendMessage(chatId, `✅ *Payment confirmed!* (AI ${(aiResult.confidence || 0)*100}% confidence)\n\n${summary}\n\nYour order #${order.id} is confirmed.`, { parse_mode: "Markdown" });
 
