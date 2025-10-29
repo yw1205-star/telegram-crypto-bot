@@ -25,10 +25,10 @@ module.exports = (bot) => {
     const chatId = msg.chat.id;
     const firstName = msg.from.first_name || "there";
 
-    // Save user to database
+    // Save user to database (REMOVED username column)
     db.run(
-      `INSERT OR REPLACE INTO users (user_id, username, first_name, lang) VALUES (?, ?, ?, 'en')`,
-      [chatId, msg.from.username || "", firstName],
+      `INSERT OR REPLACE INTO users (user_id, first_name, lang) VALUES (?, ?, 'en')`,
+      [chatId, firstName],
       (err) => {
         if (err) console.error("Error saving user:", err);
       }
