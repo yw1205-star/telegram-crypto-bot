@@ -1,4 +1,4 @@
-// commands/orders.js - Simple manual verification
+// commands/orders.js - Fixed database insert
 
 const { runAsync, allAsync, getAsync } = require("../config/database");
 
@@ -34,7 +34,7 @@ module.exports = (bot) => {
 
     } catch (err) {
       console.error("Orders callback error:", err);
-      try { bot.answerCallbackQuery(query.id, { text: "Error" }); } catch {}
+      try { await bot.answerCallbackQuery(query.id, { text: "Error" }); } catch {}
       bot.sendMessage(chatId, "⚠️ An error occurred.");
       return true;
     }
@@ -52,17 +52,15 @@ async function startCheckout(bot, chatId, q) {
     return bot.sendMessage(chatId, "🛒 Your cart is empty.");
   }
 
-  // Simple total - NO unique cents
   const total = items.reduce((s, r) => s + r.price, 0);
   const summary = items.map(r => `• ${r.product_name} x${r.quantity} = $${r.price.toFixed(2)}`).join("\n");
 
-  // Generate reference for tracking only
   const ref = 'REF' + Date.now().toString().slice(-8);
 
-  // Insert order
+  // FIXED: Remove created_at from INSERT
   await runAsync(
-    `INSERT INTO orders (user_id, items, total, currency, status, ref_code, amount_due, created_at)
-     VALUES (?, ?, ?, ?, 'pending', ?, ?, datetime('now'))`,
+    `INSERT INTO orders (user_id, items, total, currency, status, ref_code, amount_due)
+     VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
     [chatId, JSON.stringify(items), total, "USD", ref, total]
   );
 
@@ -72,17 +70,17 @@ async function startCheckout(bot, chatId, q) {
     `${summary}`,
     ``,
     `━━━━━━━━━━━━━━━`,
-    `💰 *Total Amount: $${total.toFixed(2)} USD*`,
+    `💰 *Total: $${total.toFixed(2)} USD*`,
     `━━━━━━━━━━━━━━━`,
     ``,
-    `📝 *Reference Code:* \`${ref}\``,
+    `📝 *Reference:* \`${ref}\``,
     ``,
     `💳 *Trust Wallet Address:*`,
     `\`${TRUST_WALLET_ADDRESS}\``,
     ``,
-    `⚠️ *Please include reference \`${ref}\` in your payment note!*`,
+    `⚠️ *Include reference \`${ref}\` in payment note!*`,
     ``,
-    `After payment, click the button below to submit proof.`
+    `After payment, click button below.`
   ].join("\n");
 
   await bot.sendMessage(chatId, textLines, {
@@ -109,7 +107,7 @@ async function handleUploadProof(bot, chatId, q) {
     "Please send:\n" +
     "• Transaction hash/ID, OR\n" +
     "• Screenshot of payment receipt\n\n" +
-    "Our team will verify and confirm your order within 24 hours.",
+    "Our team will verify within 24 hours.",
     {
       parse_mode: "Markdown",
       reply_markup: { force_reply: true }
@@ -124,14 +122,14 @@ async function handleUploadProof(bot, chatId, q) {
     const hasPhoto = msg.photo && msg.photo.length > 0;
     
     if (!proofText && !hasPhoto) {
-      return bot.sendMessage(chatId, "⚠️ Please provide payment proof (transaction hash or screenshot).");
+      return bot.sendMessage(chatId, "⚠️ Please provide payment proof.");
     }
 
     try {
       await submitToAdmin(bot, chatId, proofText, hasPhoto, msg);
     } catch (e) {
       console.error("Submit error:", e);
-      bot.sendMessage(chatId, "⚠️ Error submitting proof. Please contact our customer service.");
+      bot.sendMessage(chatId, "⚠️ Error submitting proof.");
     }
   };
 
@@ -145,10 +143,9 @@ async function submitToAdmin(bot, chatId, proofText, hasPhoto, msg) {
   );
 
   if (!order) {
-    return bot.sendMessage(chatId, "⚠️ No pending order found. Please create an order first.");
+    return bot.sendMessage(chatId, "⚠️ No pending order found.");
   }
 
-  // Update order with proof
   await runAsync(
     "UPDATE orders SET payment_proof = ?, status = 'pending_review' WHERE id = ?", 
     [proofText || "[photo-attached]", order.id]
@@ -157,39 +154,36 @@ async function submitToAdmin(bot, chatId, proofText, hasPhoto, msg) {
   const items = JSON.parse(order.items || "[]");
   const summary = items.map(r => `• ${r.product_name} x${r.quantity} = $${r.price.toFixed(2)}`).join("\n");
 
-  // Notify customer
   await bot.sendMessage(
     chatId,
-    `✅ *Payment Proof Submitted Successfully!*\n\n` +
+    `✅ *Payment Proof Submitted!*\n\n` +
     `📝 Order: ${order.ref_code}\n` +
     `💰 Amount: $${order.total.toFixed(2)} USD\n\n` +
-    `Your payment is being verified by our team.\n` +
-    `You will receive confirmation within 24 hours.\n\n` +
-    `Thank you for your order! 🙏`,
+    `Verification in progress.\n` +
+    `You'll be notified within 24 hours.\n\n` +
+    `Thank you! 🙏`,
     { parse_mode: "Markdown" }
   );
 
-  // Notify admin
   const adminMsg = [
-    `🔔 *NEW PAYMENT PROOF RECEIVED*`,
+    `🔔 *NEW PAYMENT PROOF*`,
     ``,
     `📝 Order: ${order.ref_code}`,
-    `👤 Customer ID: ${chatId}`,
+    `👤 User: ${chatId}`,
     `💰 Amount: $${order.total.toFixed(2)} USD`,
     ``,
-    `📦 *Order Details:*`,
+    `📦 *Items:*`,
     `${summary}`,
     ``,
-    `💳 *Payment Proof:*`,
+    `💳 *Proof:*`,
     `${proofText || "[See photo below]"}`,
     ``,
-    `⚠️ *Action Required:* Please verify payment in Trust Wallet and confirm order.`
+    `⚠️ *Action Required: Verify payment*`
   ].join("\n");
 
   try {
     await bot.sendMessage(ADMIN_CHAT_ID, adminMsg, { parse_mode: "Markdown" });
     
-    // Forward photo if customer sent one
     if (hasPhoto) {
       await bot.forwardMessage(ADMIN_CHAT_ID, chatId, msg.message_id);
     }
@@ -197,6 +191,5 @@ async function submitToAdmin(bot, chatId, proofText, hasPhoto, msg) {
     console.error("Admin notify error:", e);
   }
 
-  // Clear cart after order is created
   await runAsync("DELETE FROM cart WHERE user_id = ?", [String(chatId)]);
 }
