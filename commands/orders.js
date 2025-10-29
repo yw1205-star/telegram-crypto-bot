@@ -1,4 +1,4 @@
-// commands/orders.js - Updated verification time to 30 minutes
+// commands/orders.js - With admin contact links
 
 const { runAsync, allAsync, getAsync } = require("../config/database");
 
@@ -106,7 +106,7 @@ async function handleUploadProof(bot, chatId, q) {
     "Please send:\n" +
     "• Transaction hash/ID, OR\n" +
     "• Screenshot of payment receipt\n\n" +
-    "Our team will verify within 30 minutes.",  // ✅ CHANGED HERE
+    "Our team will verify within 30 minutes.",
     {
       parse_mode: "Markdown",
       reply_markup: { force_reply: true }
@@ -153,35 +153,57 @@ async function submitToAdmin(bot, chatId, proofText, hasPhoto, msg) {
   const items = JSON.parse(order.items || "[]");
   const summary = items.map(r => `• ${r.product_name} x${r.quantity} = $${r.price.toFixed(2)}`).join("\n");
 
+  // Message to CUSTOMER
   await bot.sendMessage(
     chatId,
     `✅ *Payment Proof Submitted!*\n\n` +
     `📝 Order: ${order.ref_code}\n` +
     `💰 Amount: $${order.total.toFixed(2)} USD\n\n` +
-    `Verification in progress.\n` +
-    `You'll be notified within 30 minutes.\n\n` +  // ✅ CHANGED HERE
-    `Thank you! 🙏`,
-    { parse_mode: "Markdown" }
+    `Your payment proof has been sent to our admin for verification.\n\n` +
+    `⏱️ Verification typically takes 30 minutes.\n\n` +
+    `Need urgent assistance? Contact admin below 👇`,
+    { 
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [{ 
+            text: "💬 Contact Admin", 
+            url: `tg://user?id=${ADMIN_CHAT_ID}` 
+          }]
+        ]
+      }
+    }
   );
 
+  // Message to ADMIN
   const adminMsg = [
-    `🔔 *NEW PAYMENT PROOF*`,
+    `🔔 *NEW PAYMENT PROOF RECEIVED*`,
     ``,
     `📝 Order: ${order.ref_code}`,
-    `👤 User: ${chatId}`,
+    `👤 User ID: ${chatId}`,
     `💰 Amount: $${order.total.toFixed(2)} USD`,
     ``,
     `📦 *Items:*`,
     `${summary}`,
     ``,
-    `💳 *Proof:*`,
-    `${proofText || "[See photo below]"}`,
+    `💳 *Payment Proof:*`,
+    `${proofText || "[See photo/screenshot below]"}`,
     ``,
-    `⚠️ *Action Required: Verify payment within 30 minutes*`  // ✅ CHANGED HERE
+    `⚠️ *Action Required:* Verify payment within 30 minutes`
   ].join("\n");
 
   try {
-    await bot.sendMessage(ADMIN_CHAT_ID, adminMsg, { parse_mode: "Markdown" });
+    await bot.sendMessage(ADMIN_CHAT_ID, adminMsg, { 
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [{ 
+            text: "👤 View Customer Profile", 
+            url: `tg://user?id=${chatId}` 
+          }]
+        ]
+      }
+    });
     
     if (hasPhoto) {
       await bot.forwardMessage(ADMIN_CHAT_ID, chatId, msg.message_id);
