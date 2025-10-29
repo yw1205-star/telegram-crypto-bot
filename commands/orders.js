@@ -1,4 +1,4 @@
-// commands/orders.js - Fixed database insert
+// commands/orders.js - Updated verification time to 30 minutes
 
 const { runAsync, allAsync, getAsync } = require("../config/database");
 
@@ -57,7 +57,6 @@ async function startCheckout(bot, chatId, q) {
 
   const ref = 'REF' + Date.now().toString().slice(-8);
 
-  // FIXED: Remove created_at from INSERT
   await runAsync(
     `INSERT INTO orders (user_id, items, total, currency, status, ref_code, amount_due)
      VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
@@ -107,7 +106,7 @@ async function handleUploadProof(bot, chatId, q) {
     "Please send:\n" +
     "• Transaction hash/ID, OR\n" +
     "• Screenshot of payment receipt\n\n" +
-    "Our team will verify within 24 hours.",
+    "Our team will verify within 30 minutes.",  // ✅ CHANGED HERE
     {
       parse_mode: "Markdown",
       reply_markup: { force_reply: true }
@@ -160,7 +159,7 @@ async function submitToAdmin(bot, chatId, proofText, hasPhoto, msg) {
     `📝 Order: ${order.ref_code}\n` +
     `💰 Amount: $${order.total.toFixed(2)} USD\n\n` +
     `Verification in progress.\n` +
-    `You'll be notified within 24 hours.\n\n` +
+    `You'll be notified within 30 minutes.\n\n` +  // ✅ CHANGED HERE
     `Thank you! 🙏`,
     { parse_mode: "Markdown" }
   );
@@ -178,7 +177,7 @@ async function submitToAdmin(bot, chatId, proofText, hasPhoto, msg) {
     `💳 *Proof:*`,
     `${proofText || "[See photo below]"}`,
     ``,
-    `⚠️ *Action Required: Verify payment*`
+    `⚠️ *Action Required: Verify payment within 30 minutes*`  // ✅ CHANGED HERE
   ].join("\n");
 
   try {
